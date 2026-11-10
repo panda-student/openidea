@@ -1,0 +1,1433 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Agent 任务看板 · 三方案对比原型</title>
+    <style>
+      /* 颜色取自 OpenIDEA 的 src/styles/tokens.css（Islands Dark） */
+      :root {
+        --bg-app: #191a1c;
+        --bg-elev: #212326;
+        --bg-popup: #26282c;
+        --bg-hover: #2e2f30;
+        --bg-selected: #2a4371;
+        --border: #2b2d31;
+        --border-strong: #40434a;
+        --fg-strong: #dfe1e5;
+        --fg: #d1d3d9;
+        --fg-secondary: #9fa2a8;
+        --fg-muted: #8c8f95;
+        --fg-faint: #5f6269;
+        --accent: #3871e1;
+        --link: #71a1fe;
+        --danger: #f57e84;
+        --warning: #d59637;
+        --success: #6db083;
+        --info: #548af7;
+        --r: 8px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg-app);
+        color: var(--fg);
+        font:
+          13px/1.45 -apple-system,
+          "Segoe UI",
+          "Microsoft YaHei UI",
+          system-ui,
+          sans-serif;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+      svg {
+        flex: none;
+      }
+      /* 顶栏 */
+      .tabbar {
+        height: 36px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-app);
+      }
+      .tab {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 10px;
+        border-radius: 6px;
+        background: var(--bg-elev);
+        color: var(--fg-strong);
+      }
+      .proto {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--fg-faint);
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 20px 10px;
+        flex-wrap: wrap;
+      }
+      .head h1 {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--fg-strong);
+        margin: 0;
+      }
+      .chips {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .chip {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 10px;
+        border-radius: 13px;
+        background: var(--bg-elev);
+        color: var(--fg-secondary);
+        font-size: 12px;
+      }
+      .chip b {
+        color: var(--fg-strong);
+        font-weight: 600;
+      }
+      .chip.warn {
+        background: rgba(213, 150, 55, 0.14);
+        color: var(--warning);
+      }
+      .chip.warn b {
+        color: var(--warning);
+      }
+      .dots {
+        display: flex;
+        gap: 3px;
+      }
+      .dots i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--border-strong);
+      }
+      .dots i.on {
+        background: var(--success);
+      }
+      .seg {
+        display: flex;
+        background: var(--bg-elev);
+        border-radius: 7px;
+        padding: 2px;
+      }
+      .seg button {
+        border: 0;
+        background: none;
+        height: 26px;
+        padding: 0 12px;
+        border-radius: 5px;
+        color: var(--fg-secondary);
+      }
+      .seg button:hover {
+        color: var(--fg-strong);
+      }
+      .seg button.on {
+        background: var(--bg-popup);
+        color: var(--fg-strong);
+        box-shadow: 0 0 0 1px var(--border-strong);
+      }
+      .spacer {
+        flex: 1;
+      }
+      /* 主体 */
+      .main {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+      .content {
+        flex: 1;
+        min-width: 0;
+        overflow: auto;
+        padding: 4px 20px 76px;
+      }
+      /* 卡片 */
+      .card {
+        position: relative;
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        padding: 10px 12px 10px 14px;
+        margin-bottom: 8px;
+        transition:
+          border-color 0.15s,
+          background 0.15s;
+      }
+      .card:hover {
+        border-color: var(--border-strong);
+      }
+      .card::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 10px;
+        bottom: 10px;
+        width: 3px;
+        border-radius: 0 3px 3px 0;
+        background: var(--c, var(--fg-faint));
+      }
+      .card.s-running {
+        --c: var(--info);
+      }
+      .card.s-waiting {
+        --c: var(--warning);
+        border-color: rgba(213, 150, 55, 0.45);
+      }
+      .card.s-done {
+        --c: var(--success);
+        opacity: 0.75;
+      }
+      .card.s-err {
+        --c: var(--danger);
+        border-color: rgba(245, 126, 132, 0.45);
+      }
+      .ttl {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--fg-strong);
+        font-weight: 500;
+      }
+      .ttl a {
+        color: inherit;
+        text-decoration: none;
+      }
+      .ttl a:hover {
+        color: var(--link);
+        text-decoration: underline;
+      }
+      .meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .pill {
+        font-size: 11px;
+        padding: 1px 7px;
+        border-radius: 9px;
+        background: var(--bg-popup);
+        color: var(--fg-secondary);
+      }
+      .pill.prio {
+        background: rgba(56, 113, 225, 0.18);
+        color: var(--link);
+      }
+      .pill.err {
+        background: rgba(245, 126, 132, 0.15);
+        color: var(--danger);
+      }
+      .pill.ask {
+        background: rgba(213, 150, 55, 0.16);
+        color: var(--warning);
+      }
+      .prog {
+        flex: 1;
+        max-width: 90px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--bg-popup);
+        overflow: hidden;
+      }
+      .prog i {
+        display: block;
+        height: 100%;
+        background: var(--info);
+        transition: width 0.3s;
+      }
+      .body {
+        margin-top: 8px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: var(--bg-app);
+        color: var(--fg);
+        white-space: pre-wrap;
+        font-size: 12.5px;
+      }
+      .body .k {
+        color: var(--fg-muted);
+      }
+      .acts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+        align-items: center;
+      }
+      .btn {
+        height: 26px;
+        padding: 0 12px;
+        border-radius: 6px;
+        border: 1px solid var(--border-strong);
+        background: transparent;
+        color: var(--fg);
+        white-space: nowrap;
+      }
+      .btn:hover {
+        background: var(--bg-hover);
+      }
+      .btn.pri {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .btn.pri:hover {
+        filter: brightness(1.1);
+      }
+      .btn.ghost {
+        border-color: transparent;
+        color: var(--fg-muted);
+      }
+      .btn.ghost:hover {
+        color: var(--fg-strong);
+      }
+      .btn.dng {
+        color: var(--danger);
+      }
+      .kbd {
+        font-size: 10px;
+        color: var(--fg-faint);
+        margin-left: 4px;
+      }
+      textarea {
+        width: 100%;
+        margin-top: 8px;
+        min-height: 54px;
+        resize: vertical;
+        background: var(--bg-app);
+        color: var(--fg);
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font: inherit;
+      }
+      textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .empty {
+        color: var(--fg-faint);
+        font-size: 12px;
+        padding: 18px 0;
+        text-align: center;
+      }
+      /* A 四列 */
+      .cols {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(220px, 1fr));
+        gap: 12px;
+        align-items: start;
+      }
+      .colh {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        color: var(--fg-secondary);
+        font-weight: 600;
+        font-size: 12px;
+      }
+      .colh .n {
+        font-weight: 400;
+        color: var(--fg-faint);
+      }
+      .colh .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+      }
+      /* B 分组 */
+      .grp {
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        margin-bottom: 14px;
+        overflow: hidden;
+      }
+      .grph {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .grph b {
+        color: var(--fg-strong);
+      }
+      .bar {
+        flex: 1;
+        max-width: 260px;
+        height: 6px;
+        border-radius: 3px;
+        background: var(--bg-popup);
+        display: flex;
+        overflow: hidden;
+      }
+      .bar i {
+        display: block;
+        height: 100%;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 44px 1fr 120px 110px 170px;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .row:last-child {
+        border-bottom: 0;
+      }
+      .row:hover {
+        background: var(--bg-hover);
+      }
+      .row .num {
+        color: var(--fg-faint);
+      }
+      .row .t {
+        color: var(--fg-strong);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .st {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--fg-secondary);
+      }
+      .st i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+      }
+      /* C 收件箱 */
+      .inbox {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 12px;
+        height: 100%;
+      }
+      .list {
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        overflow: auto;
+      }
+      .li {
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--border);
+        cursor: pointer;
+      }
+      .li:hover {
+        background: var(--bg-hover);
+      }
+      .li.sel {
+        background: var(--bg-selected);
+      }
+      .li .t {
+        color: var(--fg-strong);
+      }
+      .li .m {
+        font-size: 12px;
+        color: var(--fg-muted);
+        margin-top: 2px;
+        display: flex;
+        gap: 6px;
+      }
+      .detail {
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        padding: 18px 22px;
+        overflow: auto;
+      }
+      .detail h2 {
+        margin: 0 0 4px;
+        font-size: 16px;
+        color: var(--fg-strong);
+      }
+      .detail .body {
+        font-size: 13px;
+        padding: 12px 14px;
+      }
+      .foot {
+        display: flex;
+        gap: 16px;
+        margin-top: 14px;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      /* 变体标注与底部切换栏 */
+      .vcap {
+        margin: 10px 0 14px;
+        padding: 8px 12px;
+        border: 1px dashed var(--border-strong);
+        border-radius: 8px;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .vcap b {
+        color: var(--fg-strong);
+        font-weight: 600;
+        margin-right: 10px;
+      }
+      .exp {
+        background: var(--bg-app);
+        border-bottom: 1px solid var(--border);
+        padding: 10px 14px;
+      }
+      .vbar {
+        position: fixed;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        background: var(--bg-popup);
+        border: 1px solid var(--border-strong);
+        border-radius: 10px;
+        padding: 4px 6px;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+        z-index: 10;
+      }
+      .vbar .vl {
+        font-size: 10px;
+        color: var(--fg-faint);
+        padding: 0 8px;
+        letter-spacing: 0.08em;
+      }
+      .vbar button {
+        border: 0;
+        background: none;
+        height: 34px;
+        padding: 2px 12px;
+        border-radius: 7px;
+        color: var(--fg-secondary);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        line-height: 1.25;
+        text-align: left;
+      }
+      .vbar button b {
+        font-size: 12px;
+        font-weight: 600;
+        color: inherit;
+      }
+      .vbar button i {
+        font-style: normal;
+        font-size: 10px;
+        color: var(--fg-faint);
+      }
+      .vbar button:hover {
+        background: var(--bg-hover);
+        color: var(--fg-strong);
+      }
+      .vbar button.on {
+        background: var(--bg-selected);
+        color: #fff;
+      }
+      .vbar button.on i {
+        color: #b9c9ea;
+      }
+      /* 模拟器 */
+      .sim {
+        width: 300px;
+        flex: none;
+        border-left: 1px solid var(--border);
+        background: #1c1d20;
+        overflow: auto;
+        padding: 14px 16px;
+      }
+      .sim.hide {
+        display: none;
+      }
+      .sim h3 {
+        margin: 0 0 2px;
+        font-size: 12px;
+        color: var(--fg-strong);
+      }
+      .sim .sub {
+        font-size: 11px;
+        color: var(--fg-faint);
+        margin-bottom: 12px;
+      }
+      .sec {
+        margin-bottom: 16px;
+      }
+      .sec > label {
+        display: block;
+        font-size: 11px;
+        color: var(--fg-muted);
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+      .sim .btn {
+        width: 100%;
+      }
+      .slots {
+        display: flex;
+        gap: 6px;
+      }
+      .slot {
+        flex: 1;
+        height: 40px;
+        border-radius: 6px;
+        border: 1px dashed var(--border-strong);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        color: var(--fg-faint);
+      }
+      .slot.run {
+        border: 1px solid var(--info);
+        background: rgba(84, 138, 247, 0.12);
+        color: var(--link);
+      }
+      .slot.hold {
+        border: 1px solid var(--warning);
+        background: rgba(213, 150, 55, 0.12);
+        color: var(--warning);
+      }
+      .stat {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 4px 8px;
+        font-size: 12px;
+        color: var(--fg-secondary);
+      }
+      .stat b {
+        color: var(--fg-strong);
+        font-weight: 500;
+        text-align: right;
+      }
+      .stat .bad {
+        color: var(--danger);
+      }
+      select {
+        width: 100%;
+        height: 28px;
+        background: var(--bg-elev);
+        color: var(--fg);
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+        padding: 0 6px;
+        font: inherit;
+      }
+      .tog {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 12px;
+        margin: 6px 0;
+      }
+      .sw {
+        width: 30px;
+        height: 17px;
+        border-radius: 9px;
+        background: var(--border-strong);
+        position: relative;
+        border: 0;
+        padding: 0;
+      }
+      .sw::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: #fff;
+        transition: left 0.15s;
+      }
+      .sw.on {
+        background: var(--accent);
+      }
+      .sw.on::after {
+        left: 15px;
+      }
+      .cmp {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11.5px;
+        margin-top: 8px;
+      }
+      .cmp td,
+      .cmp th {
+        padding: 4px 3px;
+        border-bottom: 1px solid var(--border);
+        text-align: right;
+        font-weight: 400;
+        color: var(--fg-secondary);
+      }
+      .cmp td:first-child,
+      .cmp th:first-child {
+        text-align: left;
+      }
+      .log {
+        font-size: 11.5px;
+        color: var(--fg-muted);
+        max-height: 180px;
+        overflow: auto;
+        line-height: 1.6;
+      }
+      .qbox {
+        font-size: 12px;
+        color: var(--fg-secondary);
+        background: rgba(56, 113, 225, 0.1);
+        border: 1px solid rgba(56, 113, 225, 0.3);
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 14px;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 20px;
+        transform: translateX(-50%);
+        background: var(--bg-popup);
+        border: 1px solid var(--border-strong);
+        color: var(--fg-strong);
+        padding: 8px 14px;
+        border-radius: 8px;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+        opacity: 0;
+        transition: opacity 0.2s;
+        pointer-events: none;
+      }
+      .toast.on {
+        opacity: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="tabbar">
+      <div class="tab">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <rect x="1.5" y="2.5" width="3.5" height="11" rx="1" stroke="currentColor" />
+          <rect x="6.25" y="2.5" width="3.5" height="7" rx="1" stroke="currentColor" />
+          <rect x="11" y="2.5" width="3.5" height="9" rx="1" stroke="currentColor" /></svg
+        >Agent 任务看板
+      </div>
+      <span class="proto">一次性原型 · 数据为模拟 · 不进 main</span>
+      <button class="btn ghost" id="simToggle" style="height: 26px">隐藏模拟器</button>
+    </div>
+    <div class="head" id="head"></div>
+    <div class="main">
+      <div class="content" id="content"></div>
+      <aside class="sim" id="sim"></aside>
+    </div>
+    <div class="toast" id="toast"></div>
+    <div class="vbar" id="vbar"></div>
+
+    <script id="core">
+      // ===== 运转逻辑：纯函数，与界面分离；正式实现时搬进协调模块 =====
+      const WORK = { plan: 2, fix: 4, writeback: 1 };
+      const SAMPLES = [
+        [
+          "订单导出为空",
+          "导出接口按创建人过滤，但批量导入的订单创建人为空，全部被过滤掉。",
+          "过滤条件改为创建人为空时按所属部门匹配；补导入数据的创建人。",
+        ],
+        ["工时汇总少算一天", "汇总按 [开始, 结束) 统计，结束日当天被排除。", "改为闭区间，并补跨月边界的单测。"],
+        ["审批节点没有显示", "前端取节点名用了 nodeName，接口实际返回 node_name。", "前端按接口字段取值，兼容旧字段。"],
+        ["价格字段取了旧值", "详情页缓存了 10 分钟，改价后未失效。", "改价后清除该商品的详情缓存。"],
+        ["列表分页重复", "排序字段只有更新时间，时间相同的记录分页时顺序不稳定。", "排序追加主键作为第二排序字段。"],
+        ["附件上传 404", "网关未转发新的 /file/v2 路径。", "网关路由补上 /file/v2/**。"],
+        ["状态流转漏了驳回", "状态机缺少「审核中 → 已驳回」这条边。", "补上该流转并在驳回时记录原因。"],
+        ["报表小数位错误", "金额先四舍五入再求和，累计误差。", "先求和再四舍五入。"],
+      ];
+      function init() {
+        return {
+          t: 0,
+          seq: 0,
+          n: 0,
+          slots: 3,
+          release: true,
+          away: false,
+          userEvery: 0,
+          cap: 100,
+          tasks: [],
+          log: [],
+          m: { busy: 0, blocked: 0, ticks: 0 },
+        };
+      }
+      const running = (s) => s.tasks.filter((x) => x.state === "running").length;
+      const waiting = (s) => s.tasks.filter((x) => x.state === "waiting");
+      const occupied = (s) => running(s) + (s.release ? 0 : waiting(s).length);
+      function say(s, m) {
+        s.log.unshift({ t: s.t, m });
+        s.log.length = Math.min(s.log.length, 80);
+      }
+      function schedule(s) {
+        for (;;) {
+          if (occupied(s) >= s.slots) break;
+          const q = s.tasks.filter((x) => x.state === "queued").sort((a, b) => b.prio - a.prio || a.seq - b.seq);
+          if (!q.length) break;
+          const k = q[0];
+          k.state = "running";
+          if (!(k.left > 0)) k.left = WORK[k.phase];
+          say(s, "#" + k.n + " 拿到名额" + (k.prio ? "（已答复，优先）" : ""));
+        }
+      }
+      function answer(s, id, ok, note) {
+        const k = s.tasks.find((x) => x.id === id);
+        if (!k || k.state !== "waiting") return;
+        if (k.err) {
+          k.err = false;
+          k.left = WORK[k.phase];
+          say(s, "#" + k.n + " 出错后继续");
+        } else if (ok) {
+          k.phase = k.ask === "plan" ? "fix" : "writeback";
+          k.left = WORK[k.phase];
+          say(s, "#" + k.n + " 已同意" + (k.ask === "plan" ? "方案" : "回写"));
+        } else {
+          k.left = WORK[k.phase];
+          k.note = note || "";
+          say(s, "#" + k.n + " 已驳回" + (note ? "：" + note : ""));
+        }
+        k.ask = null;
+        if (s.release) {
+          k.state = "queued";
+          k.prio = true;
+          k.seq = ++s.seq;
+        } else k.state = "running";
+        schedule(s);
+      }
+      function reduce(s0, a) {
+        const s = structuredClone(s0);
+        switch (a.type) {
+          case "dispatch": {
+            const live = s.tasks.filter((x) => !["done", "stopped"].includes(x.state)).length,
+              n = Math.min(a.n, s.cap - live);
+            for (let i = 0; i < n; i++) {
+              s.n++;
+              const [title, cause, fix] = SAMPLES[(s.n - 1) % SAMPLES.length];
+              s.tasks.push({
+                id: "t" + s.n,
+                n: s.n,
+                title,
+                cause,
+                fix,
+                coord: a.coord || "A",
+                state: "queued",
+                phase: "plan",
+                left: 0,
+                prio: false,
+                err: false,
+                ask: null,
+                seq: ++s.seq,
+              });
+            }
+            say(
+              s,
+              "Super-agent " + (a.coord || "A") + " 派活 " + n + " 个" + (n < a.n ? "（超过上限 " + s.cap + "）" : ""),
+            );
+            schedule(s);
+            break;
+          }
+          case "approve":
+            answer(s, a.id, true);
+            break;
+          case "reject":
+            answer(s, a.id, false, a.note);
+            break;
+          case "stop": {
+            const k = s.tasks.find((x) => x.id === a.id);
+            if (k && !["done", "stopped"].includes(k.state)) {
+              k.state = "stopped";
+              say(s, "#" + k.n + " 已停止");
+              schedule(s);
+            }
+            break;
+          }
+          case "fail": {
+            const k = s.tasks.find((x) => x.id === a.id);
+            if (k && k.state === "running") {
+              k.state = "waiting";
+              k.err = true;
+              k.ask = "error";
+              say(s, "#" + k.n + " 出错");
+              schedule(s);
+            }
+            break;
+          }
+          case "policy":
+            s.release = a.v;
+            schedule(s);
+            break;
+          case "away":
+            s.away = a.v;
+            say(s, a.v ? "我离开了" : "我回来了");
+            break;
+          case "userEvery":
+            s.userEvery = a.v;
+            break;
+          case "tick": {
+            s.t++;
+            s.m.ticks++;
+            s.m.busy += running(s);
+            if (s.tasks.some((x) => x.state === "queued") && running(s) < s.slots) s.m.blocked++;
+            if (!s.away && s.userEvery > 0 && s.t % s.userEvery === 0) {
+              const w = waiting(s)
+                .filter((x) => !x.err)
+                .sort((x, y) => x.n - y.n)[0];
+              if (w) answer(s, w.id, true);
+            }
+            for (const k of s.tasks.filter((x) => x.state === "running")) {
+              if (--k.left > 0) continue;
+              if (k.phase === "writeback") {
+                k.state = "done";
+                say(s, "#" + k.n + " 已完成");
+                continue;
+              }
+              k.state = "waiting";
+              k.ask = k.phase === "plan" ? "plan" : "writeback";
+              say(s, "#" + k.n + " 提请确认" + (k.ask === "plan" ? "方案" : "回写"));
+            }
+            schedule(s);
+            break;
+          }
+        }
+        return s;
+      }
+      function simulate(release, total, awayFrom, awayTo, until, every) {
+        let s = reduce(init(), { type: "policy", v: release });
+        s = reduce(s, { type: "userEvery", v: every });
+        s = reduce(s, { type: "dispatch", n: total });
+        for (let i = 0; i < until; i++) {
+          if (s.t === awayFrom) s = reduce(s, { type: "away", v: true });
+          if (s.t === awayTo) s = reduce(s, { type: "away", v: false });
+          s = reduce(s, { type: "tick" });
+        }
+        return {
+          done: s.tasks.filter((x) => x.state === "done").length,
+          waiting: waiting(s).length,
+          queued: s.tasks.filter((x) => x.state === "queued").length,
+          blocked: s.m.blocked,
+          util: Math.round((100 * s.m.busy) / (s.m.ticks * s.slots)),
+        };
+      }
+      // ===== 以上是逻辑 =====
+    </script>
+
+    <script>
+      // ===== 界面 =====
+      const $ = (id) => document.getElementById(id);
+      const ui = {
+        view: new URLSearchParams(location.search).get("variant") || "a",
+        filter: "all",
+        rejecting: null,
+        sel: null,
+        exp: null,
+        cmp: null,
+        sim: true,
+        speed: 1000,
+        coord: "A",
+      };
+      // 演示初始数据：一打开就有内容可对比（「重置」也回到这份）
+      function seed() {
+        let s = init();
+        s = reduce(s, { type: "dispatch", n: 9, coord: "A" });
+        s = reduce(s, { type: "dispatch", n: 5, coord: "B" });
+        const T = s.tasks,
+          set = (i, o) => Object.assign(T[i], o);
+        set(0, { state: "done" });
+        set(1, { state: "done" });
+        set(13, { state: "stopped" });
+        set(2, { state: "running", phase: "plan", left: 1 });
+        set(3, { state: "running", phase: "fix", left: 3 });
+        set(9, { state: "running", phase: "writeback", left: 1 });
+        set(4, { state: "waiting", ask: "plan" });
+        set(5, { state: "waiting", ask: "plan" });
+        set(6, { state: "waiting", ask: "writeback" });
+        set(7, { state: "waiting", err: true, ask: "error" });
+        set(10, { state: "waiting", ask: "plan" });
+        set(11, { state: "waiting", ask: "writeback" });
+        set(12, { state: "queued", prio: true });
+        say(s, "载入演示数据：A 派 9 个、B 派 5 个，覆盖全部状态");
+        return s;
+      }
+      let S = seed(),
+        timer = null,
+        timeline = [];
+      const STC = {
+        queued: "var(--fg-faint)",
+        running: "var(--info)",
+        waiting: "var(--warning)",
+        done: "var(--success)",
+        stopped: "var(--fg-faint)",
+      };
+      const STN = { queued: "排队", running: "进行中", waiting: "等我确认", done: "已完成", stopped: "已停止" };
+      const PH = { plan: "查原因", fix: "修复 · 推送 · 验证", writeback: "回写文档" };
+      const CAP = {
+        a: ["方案 A · 四列看板", "状态驱动：一列一个状态，每张卡片自带操作，盯着全局进度逐张处理"],
+        b: ["方案 B · 分组列表", "归属驱动：按 Super-agent 分组的紧凑表格，先扫整体进度，需要时再展开单条处理"],
+        c: [
+          "方案 C · 待确认收件箱",
+          "待办驱动：只看需要我处理的事，J/K 上下切换、A 同意、R 驳回，像清收件箱一样逐个解决",
+        ],
+      };
+      const I = {
+        check:
+          '<svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        open: '<svg width="12" height="12" viewBox="0 0 16 16"><path d="M9 3h4v4M13 3L7 9M11 9.5V13H3V5h3.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      };
+
+      function toast(m) {
+        const t = $("toast");
+        t.textContent = m;
+        t.classList.add("on");
+        clearTimeout(toast.h);
+        toast.h = setTimeout(() => t.classList.remove("on"), 1400);
+      }
+      function act(a, msg) {
+        S = reduce(S, a);
+        if (msg) toast(msg);
+        render();
+      }
+      function tick() {
+        S = reduce(S, { type: "tick" });
+        for (const e of timeline.filter((e) => e.at === S.t)) S = reduce(S, e.a);
+        render();
+      }
+      function play(on) {
+        clearInterval(timer);
+        timer = on ? setInterval(tick, ui.speed) : null;
+        renderSim();
+      }
+      const vis = () => S.tasks.filter((k) => ui.filter === "all" || k.coord === ui.filter);
+      const askText = (k) =>
+        k.err
+          ? "出错了：执行 mvn test 时连接数据库超时。\n进它的会话看细节，或点「继续」让它重试。"
+          : k.ask === "plan"
+            ? `<span class="k">原因</span>  ${k.cause}\n<span class="k">方案</span>  ${k.fix}`
+            : `<span class="k">验证</span>  已合并到开发分支并推送，UAT 部署后复现步骤不再出现问题。\n<span class="k">拟回写</span>  「${k.title}」已修复：${k.fix}`;
+
+      function cardHTML(k) {
+        const cls = k.err ? "s-err" : "s-" + (k.state === "stopped" ? "done" : k.state);
+        let pills = `<span class="pill">${k.coord}</span>`;
+        if (k.state === "queued" && k.prio) pills += '<span class="pill prio">已答复 · 优先</span>';
+        if (k.state === "waiting")
+          pills += k.err
+            ? '<span class="pill err">出错</span>'
+            : `<span class="pill ask">确认${k.ask === "plan" ? "方案" : "回写"}</span>`;
+        if (k.state === "stopped") pills += '<span class="pill">已停止</span>';
+        let meta = `<span>#${k.n}</span>${pills}`;
+        if (k.state === "running")
+          meta += `<span>${PH[k.phase]}</span><span class="prog"><i style="width:${100 - (100 * k.left) / WORK[k.phase]}%"></i></span>`;
+        let body = "",
+          acts = "";
+        if (k.state === "waiting") {
+          body = `<div class="body">${askText(k)}</div>`;
+          if (ui.rejecting === k.id)
+            acts = `<textarea data-note="${k.id}" placeholder="驳回意见，会作为消息发给子 Agent"></textarea><div class="acts"><button class="btn dng" data-a="rejectGo" data-id="${k.id}">确认驳回</button><button class="btn ghost" data-a="rejectNo">取消</button></div>`;
+          else
+            acts = `<div class="acts"><button class="btn pri" data-a="approve" data-id="${k.id}">${k.err ? "继续" : "同意"}</button>${k.err ? "" : `<button class="btn" data-a="reject" data-id="${k.id}">驳回…</button>`}<button class="btn ghost" data-a="open" data-id="${k.id}">打开会话 ${I.open}</button><span class="spacer"></span><button class="btn ghost" data-a="stop" data-id="${k.id}">停止</button></div>`;
+        } else if (k.state === "running")
+          acts = `<div class="acts"><button class="btn ghost" data-a="open" data-id="${k.id}">打开会话 ${I.open}</button><span class="spacer"></span><button class="btn ghost" data-a="fail" data-id="${k.id}">模拟出错</button><button class="btn ghost" data-a="stop" data-id="${k.id}">停止</button></div>`;
+        else if (k.state === "queued")
+          acts = `<div class="acts"><span class="spacer"></span><button class="btn ghost" data-a="stop" data-id="${k.id}">停止</button></div>`;
+        if (k.note && k.state !== "done" && k.state !== "stopped")
+          body += `<div class="meta">上次驳回意见：${k.note}</div>`;
+        return `<div class="card ${cls}"><div class="ttl"><a href="#" data-a="open" data-id="${k.id}" title="打开它的会话">${k.title}</a><span style="color:var(--fg-faint)">${I.open}</span></div><div class="meta">${meta}</div>${body}${acts}</div>`;
+      }
+      function viewA() {
+        const cols = [
+          ["queued", "排队", (k) => k.state === "queued"],
+          ["running", "进行中", (k) => k.state === "running"],
+          ["waiting", "等我确认", (k) => k.state === "waiting"],
+          ["done", "已完成", (k) => k.state === "done" || k.state === "stopped"],
+        ];
+        return `<div class="cols">${cols
+          .map(([s, n, f]) => {
+            let l = vis().filter(f);
+            if (s === "waiting") l.sort((a, b) => a.n - b.n);
+            if (s === "done") l.reverse();
+            return `<div><div class="colh"><span class="dot" style="background:${STC[s]}"></span>${n}<span class="n">${l.length}</span></div>${
+              l.length
+                ? l
+                    .slice(0, s === "done" ? 12 : 60)
+                    .map(cardHTML)
+                    .join("")
+                : '<div class="empty">空</div>'
+            }${s === "done" && l.length > 12 ? `<div class="empty">还有 ${l.length - 12} 个</div>` : ""}</div>`;
+          })
+          .join("")}</div>`;
+      }
+      function viewB() {
+        const order = ["waiting", "running", "queued", "done", "stopped"];
+        const groups = ["A", "B"].filter(
+          (c) => (ui.filter === "all" || ui.filter === c) && S.tasks.some((k) => k.coord === c),
+        );
+        if (!groups.length) return '<div class="empty">还没有任务。用右侧模拟器派活。</div>';
+        return groups
+          .map((c) => {
+            const l = S.tasks.filter((k) => k.coord === c),
+              cnt = (s) => l.filter((k) => k.state === s || (s === "done" && k.state === "stopped")).length;
+            const seg = ["done", "running", "waiting", "queued"]
+              .map((s) => `<i style="width:${(100 * cnt(s)) / l.length}%;background:${STC[s]}"></i>`)
+              .join("");
+            return `<div class="grp"><div class="grph"><b>Super-agent ${c}</b><span class="bar">${seg}</span><span style="color:var(--fg-muted);font-size:12px">完成 ${cnt("done")} / ${l.length}</span>${cnt("waiting") ? `<span class="chip warn"><b>${cnt("waiting")}</b> 等我确认</span>` : ""}</div>
+    ${l
+      .slice()
+      .sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state) || a.n - b.n)
+      .map((k) => {
+        const row = `<div class="row"><span class="num">#${k.n}</span><span class="t"><a href="#" data-a="open" data-id="${k.id}" style="color:inherit;text-decoration:none">${k.title}</a></span>
+      <span class="st"><i style="background:${k.err ? "var(--danger)" : STC[k.state]}"></i>${k.err ? "出错" : STN[k.state]}${k.state === "waiting" && !k.err ? (k.ask === "plan" ? " · 方案" : " · 回写") : ""}</span>
+      <span style="font-size:12px;color:var(--fg-muted)">${k.state === "running" ? PH[k.phase] : k.state === "queued" && k.prio ? "已答复 · 优先" : ""}</span>
+      <span style="display:flex;gap:6px;justify-content:flex-end">${k.state === "waiting" ? `<button class="btn pri" data-a="approve" data-id="${k.id}">${k.err ? "继续" : "同意"}</button><button class="btn" data-a="exp" data-id="${k.id}">${ui.exp === k.id ? "收起" : "展开"}</button>` : ""}</span></div>`;
+        if (k.state !== "waiting" || ui.exp !== k.id) return row;
+        const acts =
+          ui.rejecting === k.id
+            ? `<textarea data-note="${k.id}" placeholder="驳回意见，会作为消息发给子 Agent"></textarea><div class="acts"><button class="btn dng" data-a="rejectGo" data-id="${k.id}">确认驳回</button><button class="btn ghost" data-a="rejectNo">取消</button></div>`
+            : `<div class="acts"><button class="btn pri" data-a="approve" data-id="${k.id}">${k.err ? "继续" : "同意"}</button>${k.err ? "" : '<button class="btn" data-a="reject" data-id="${k.id}">驳回…</button>'}<button class="btn ghost" data-a="open" data-id="${k.id}">打开会话 ${I.open}</button><span class="spacer"></span><button class="btn ghost" data-a="stop" data-id="${k.id}">停止</button></div>`;
+        return (
+          row +
+          `<div class="exp"><div class="meta" style="margin:0 0 8px">#${k.n} · Super-agent ${k.coord} · ${k.err ? "出错，可进会话处理后继续" : k.ask === "plan" ? "动手前确认方案" : "回写前确认结果"}</div><div class="body">${askText(k)}</div>${k.note ? `<div class="meta" style="margin-top:8px">上次驳回意见：${k.note}</div>` : ""}${acts}</div>`
+        );
+      })
+      .join("")}</div>`;
+          })
+          .join("");
+      }
+      function viewC() {
+        const w = vis()
+          .filter((k) => k.state === "waiting")
+          .sort((a, b) => a.n - b.n);
+        if (!w.find((k) => k.id === ui.sel)) ui.sel = w[0]?.id || null;
+        const k = w.find((x) => x.id === ui.sel);
+        const list = w.length
+          ? w
+              .map(
+                (x) =>
+                  `<div class="li ${x.id === ui.sel ? "sel" : ""}" data-a="sel" data-id="${x.id}"><div class="t">${x.title}</div><div class="m"><span>#${x.n}</span><span class="pill">${x.coord}</span>${x.err ? '<span class="pill err">出错</span>' : `<span class="pill ask">${x.ask === "plan" ? "方案" : "回写"}</span>`}</div></div>`,
+              )
+              .join("")
+          : '<div class="empty">没有等你确认的事 🎉</div>';
+        const others = vis(),
+          c = (s) => others.filter((x) => x.state === s || (s === "done" && x.state === "stopped")).length;
+        const detail = k
+          ? `<div class="meta" style="margin:0 0 6px">#${k.n} · Super-agent ${k.coord} · ${k.err ? "出错" : k.ask === "plan" ? "动手前确认方案" : "回写前确认结果"}</div><h2>${k.title}</h2>
+    <div class="body" style="margin-top:12px">${askText(k)}</div>
+    ${k.note ? `<div class="meta" style="margin-top:8px">上次驳回意见：${k.note}</div>` : ""}
+    ${
+      ui.rejecting === k.id
+        ? `<textarea data-note="${k.id}" placeholder="驳回意见，会作为消息发给子 Agent"></textarea><div class="acts"><button class="btn dng" data-a="rejectGo" data-id="${k.id}">确认驳回</button><button class="btn ghost" data-a="rejectNo">取消</button></div>`
+        : `<div class="acts" style="margin-top:14px"><button class="btn pri" data-a="approve" data-id="${k.id}">${k.err ? "继续" : "同意"}<span class="kbd" style="color:#cfe0ff">A</span></button>${k.err ? "" : `<button class="btn" data-a="reject" data-id="${k.id}">驳回…<span class="kbd">R</span></button>`}<button class="btn ghost" data-a="open" data-id="${k.id}">打开会话 ${I.open}</button></div>`
+    }
+    <div class="foot"><span>J / K 上下切换</span><span>处理完自动跳到下一个</span></div>`
+          : `<div class="empty" style="padding-top:60px">排队 ${c("queued")} · 进行中 ${c("running")} · 已完成 ${c("done")}<br><br>有需要你确认的事会出现在左边。</div>`;
+        return `<div class="inbox"><div class="list">${list}</div><div class="detail">${detail}</div></div>`;
+      }
+      function renderHead() {
+        const r = running(S),
+          w = waiting(S).length,
+          q = S.tasks.filter((k) => k.state === "queued").length,
+          d = S.tasks.filter((k) => k.state === "done").length;
+        const dots = Array.from({ length: S.slots }, (_, i) => `<i class="${i < r ? "on" : ""}"></i>`).join("");
+        $("head").innerHTML = `<h1>任务看板</h1>
+   <div class="chips"><span class="chip" title="全机同时运行的子 Agent">名额 <span class="dots">${dots}</span> <b>${r}/${S.slots}</b></span>
+   <span class="chip ${w ? "warn" : ""}">等我确认 <b>${w}</b></span><span class="chip">排队 <b>${q}</b></span><span class="chip">已完成 <b>${d}</b></span></div>
+   <span class="spacer"></span>
+   <div class="seg">${[
+     ["all", "全部"],
+     ["A", "Super-agent A"],
+     ["B", "Super-agent B"],
+   ]
+     .map(([v, n]) => `<button data-a="filter" data-v="${v}" class="${ui.filter === v ? "on" : ""}">${n}</button>`)
+     .join("")}</div>`;
+      }
+      function renderContent() {
+        const note = document.activeElement?.dataset?.note,
+          keep = note ? document.activeElement.value : null;
+        const [ct, cd] = CAP[ui.view];
+        $("content").innerHTML =
+          `<div class="vcap"><b>${ct}</b>${cd}</div>` +
+          (S.tasks.length
+            ? ui.view === "b"
+              ? viewB()
+              : ui.view === "c"
+                ? viewC()
+                : viewA()
+            : '<div class="empty" style="padding-top:60px">还没有任务。点右侧模拟器里的「引导演示」或「派活」开始。</div>');
+        if (note) {
+          const t = document.querySelector(`[data-note="${note}"]`);
+          if (t) {
+            t.value = keep;
+            t.focus();
+          }
+        }
+      }
+      function renderVbar() {
+        $("vbar").innerHTML =
+          '<span class="vl">方案</span>' +
+          [
+            ["a", "A · 四列看板", "状态分列 · 卡片内联确认"],
+            ["b", "B · 分组列表", "按 Super-agent 分组 · 展开处理"],
+            ["c", "C · 确认收件箱", "只看待办 · 键盘流水线"],
+          ]
+            .map(
+              ([v, t, s]) =>
+                `<button data-a="view" data-v="${v}" class="${ui.view === v ? "on" : ""}" title="${s}"><b>${t}</b><i>${s}</i></button>`,
+            )
+            .join("");
+      }
+      function renderSim() {
+        const run = S.tasks.filter((k) => k.state === "running"),
+          hold = waiting(S),
+          m = S.m;
+        const slots = Array.from({ length: S.slots }, (_, i) => {
+          if (run[i]) return `<div class="slot run">#${run[i].n}<br>干活中</div>`;
+          const j = i - run.length;
+          if (!S.release && hold[j]) return `<div class="slot hold">#${hold[j].n}<br>占着等我</div>`;
+          return '<div class="slot">空闲</div>';
+        }).join("");
+        $("sim").innerHTML = `<h3>模拟器</h3><div class="sub">原型专用，正式界面里没有这一栏</div>
+  <div class="qbox">要回答的问题：等我确认时让出名额，我不在时队列能不能继续走？看板用哪种排布最顺手？</div>
+  <div class="sec"><label>时间 · 第 ${S.t} 步</label><div class="grid2"><button class="btn ${timer ? "" : "pri"}" data-a="play">${timer ? "⏸ 暂停" : "▶ 运行"}</button><button class="btn" data-a="step">单步 +1</button></div>
+   <div class="tog" style="margin-top:8px"><span>速度</span><select data-c="speed" style="width:130px">${[
+     [1500, "慢"],
+     [1000, "正常"],
+     [400, "快"],
+   ]
+     .map(([v, n]) => `<option value="${v}" ${ui.speed == v ? "selected" : ""}>${n}</option>`)
+     .join("")}</select></div></div>
+  <div class="sec"><label>名额（全机 3 个）</label><div class="slots">${slots}</div>
+   <div class="stat" style="margin-top:8px"><span>名额利用率</span><b>${m.ticks ? Math.round((100 * m.busy) / (m.ticks * S.slots)) : 0}%</b><span>队列被堵住的步数</span><b class="${m.blocked ? "bad" : ""}">${m.blocked}</b></div></div>
+  <div class="sec"><label>引导演示</label>
+   <button class="btn" data-a="sc" data-v="mine" style="margin-bottom:6px">① 派 12 个，我自己逐个确认</button>
+   <button class="btn" data-a="sc" data-v="away" style="margin-bottom:6px">② 派 30 个，第 10~40 步我离开</button>
+   <button class="btn" data-a="sc" data-v="two">③ 两个 Super-agent 同时派活</button></div>
+  <div class="sec"><label>自由操作</label>
+   <div class="tog"><span>派给</span><select data-c="coord" style="width:130px"><option ${ui.coord === "A" ? "selected" : ""}>A</option><option ${ui.coord === "B" ? "selected" : ""}>B</option></select></div>
+   <div class="grid2"><button class="btn" data-a="d" data-v="1">派 1 个</button><button class="btn" data-a="d" data-v="10">派 10 个</button></div>
+   <div class="tog"><span>我离开（不处理确认）</span><button class="sw ${S.away ? "on" : ""}" data-a="away"></button></div>
+   <div class="tog"><span>自动替我同意</span><select data-c="ue" style="width:130px">${[
+     [0, "不自动（我手点）"],
+     [1, "每步一个"],
+     [3, "每 3 步一个"],
+     [6, "每 6 步一个"],
+   ]
+     .map(([v, n]) => `<option value="${v}" ${S.userEvery == v ? "selected" : ""}>${n}</option>`)
+     .join("")}</select></div>
+   <div class="tog"><span>等确认时让出名额</span><button class="sw ${S.release ? "on" : ""}" data-a="policy"></button></div>
+   <button class="btn ghost" data-a="reset" style="margin-top:4px">重置</button></div>
+  <div class="sec"><label>新旧规则对比</label><button class="btn" data-a="cmp">派 30 个、第 10~40 步离开、跑 90 步</button>
+   ${ui.cmp ? `<table class="cmp"><tr><th></th><th>完成</th><th>等我</th><th>排队</th><th>堵住</th></tr>${ui.cmp.map(([n, r]) => `<tr><td>${n}</td><td>${r.done}</td><td>${r.waiting}</td><td>${r.queued}</td><td style="${r.blocked ? "color:var(--danger)" : ""}">${r.blocked}</td></tr>`).join("")}</table>` : ""}</div>
+  <div class="sec"><label>事件</label><div class="log">${S.log.map((e) => `<span style="color:var(--fg-faint)">${e.t}</span>　${e.m}`).join("<br>") || "—"}</div></div>`;
+      }
+      function render() {
+        renderHead();
+        renderContent();
+        renderSim();
+        renderVbar();
+      }
+      function scenario(v) {
+        play(false);
+        S = init();
+        timeline = [];
+        ui.cmp = null;
+        ui.rejecting = null;
+        ui.exp = null;
+        if (v === "mine") {
+          S = reduce(S, { type: "dispatch", n: 12, coord: "A" });
+          toast("派了 12 个。它们查完原因会进「等我确认」，你来点同意或驳回");
+        }
+        if (v === "away") {
+          S = reduce(S, { type: "userEvery", v: 3 });
+          S = reduce(S, { type: "dispatch", n: 30, coord: "A" });
+          timeline = [
+            { at: 10, a: { type: "away", v: true } },
+            { at: 40, a: { type: "away", v: false } },
+          ];
+          toast("自动每 3 步替你同意一个；第 10~40 步你离开");
+        }
+        if (v === "two") {
+          S = reduce(S, { type: "dispatch", n: 8, coord: "A" });
+          timeline = [{ at: 3, a: { type: "dispatch", n: 8, coord: "B" } }];
+          toast("A 先派 8 个，第 3 步 B 再派 8 个，共用 3 个名额");
+        }
+        render();
+        play(true);
+      }
+      // 用 pointerdown 处理按钮：自动运行时界面每秒刷新，click 会因按下和松开之间元素被替换而丢失
+      document.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        const b = e.target.closest("[data-a]");
+        if (!b) return;
+        e.preventDefault();
+        const a = b.dataset.a,
+          id = b.dataset.id,
+          v = b.dataset.v;
+        if (a === "open") {
+          const k = S.tasks.find((x) => x.id === id);
+          toast("正式版：打开 #" + k.n + " 的会话页签");
+          return;
+        }
+        if (a === "filter") {
+          ui.filter = v;
+          return render();
+        }
+        if (a === "view") {
+          ui.view = v;
+          try {
+            history.replaceState(null, "", "?variant=" + v);
+          } catch (_) {
+            /* file:// 下个别浏览器不允许 */
+          }
+          return render();
+        }
+        if (a === "exp") {
+          ui.exp = ui.exp === id ? null : id;
+          ui.rejecting = null;
+          return render();
+        }
+        if (a === "sel") {
+          ui.sel = id;
+          if (ui.view !== "c") {
+            ui.view = "c";
+            try {
+              history.replaceState(null, "", "?variant=c");
+            } catch (_) {}
+          }
+          return render();
+        }
+        if (a === "approve") {
+          const k = S.tasks.find((x) => x.id === id);
+          return act(
+            { type: "approve", id },
+            "#" + k.n + (k.err ? " 已继续，回排队优先重试" : " 已同意，回排队优先继续"),
+          );
+        }
+        if (a === "reject") {
+          ui.rejecting = id;
+          render();
+          const t = document.querySelector(`[data-note="${id}"]`);
+          t && setTimeout(() => t.focus());
+          return;
+        }
+        if (a === "rejectGo") {
+          const note = (document.querySelector(`[data-note="${id}"]`) || {}).value || "";
+          ui.rejecting = null;
+          return act({ type: "reject", id, note }, "已驳回，意见已发给子 Agent，它回排队优先重做");
+        }
+        if (a === "rejectNo") {
+          ui.rejecting = null;
+          return render();
+        }
+        if (a === "stop" || a === "fail") return act({ type: a, id });
+        if (a === "play") return play(!timer);
+        if (a === "step") return tick();
+        if (a === "d") return act({ type: "dispatch", n: +v, coord: ui.coord });
+        if (a === "away") return act({ type: "away", v: !S.away });
+        if (a === "policy")
+          return act(
+            { type: "policy", v: !S.release },
+            S.release ? "改为：等确认时仍占名额（旧）" : "改为：等确认时让出名额（新）",
+          );
+        if (a === "reset") {
+          play(false);
+          S = seed();
+          timeline = [];
+          ui.cmp = null;
+          ui.rejecting = null;
+          ui.exp = null;
+          toast("已恢复演示数据");
+          return render();
+        }
+        if (a === "sc") return scenario(v);
+        if (a === "cmp") {
+          ui.cmp = [
+            ["让出名额（新）", simulate(true, 30, 10, 40, 90, 3)],
+            ["仍占名额（旧）", simulate(false, 30, 10, 40, 90, 3)],
+          ];
+          return renderSim();
+        }
+      });
+      document.addEventListener("change", (e) => {
+        const c = e.target.dataset.c;
+        if (!c) return;
+        if (c === "speed") {
+          ui.speed = +e.target.value;
+          if (timer) play(true);
+        }
+        if (c === "coord") ui.coord = e.target.value;
+        if (c === "ue") act({ type: "userEvery", v: +e.target.value });
+      });
+      document.addEventListener("keydown", (e) => {
+        if (ui.view !== "c" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+        const w = vis()
+            .filter((k) => k.state === "waiting")
+            .sort((a, b) => a.n - b.n),
+          i = w.findIndex((k) => k.id === ui.sel);
+        if (e.key === "j" || e.key === "k") {
+          const n = w[Math.max(0, Math.min(w.length - 1, i + (e.key === "j" ? 1 : -1)))];
+          if (n) {
+            ui.sel = n.id;
+            render();
+          }
+        }
+        if (e.key === "a" && w[i]) {
+          const k = w[i];
+          act({ type: "approve", id: k.id }, "#" + k.n + " 已同意，回排队优先继续");
+        }
+        if (e.key === "r" && w[i] && !w[i].err) {
+          e.preventDefault();
+          ui.rejecting = w[i].id;
+          render();
+          document.querySelector(`[data-note="${w[i].id}"]`)?.focus();
+        }
+      });
+      $("simToggle").onclick = () => {
+        ui.sim = !ui.sim;
+        $("sim").classList.toggle("hide", !ui.sim);
+        $("simToggle").textContent = ui.sim ? "隐藏模拟器" : "显示模拟器";
+      };
+      render();
+    </script>
+  </body>
+</html>
