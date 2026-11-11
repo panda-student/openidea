@@ -64,6 +64,7 @@ pub(crate) mod syntax_bindings {
             "openidea:plugin/settings": super::bindings::openidea::plugin::settings,
             "openidea:plugin/database": super::bindings::openidea::plugin::database,
             "openidea:plugin/mcp": super::bindings::openidea::plugin::mcp,
+            "openidea:plugin/extensions": super::bindings::openidea::plugin::extensions,
         },
     });
 }
@@ -101,6 +102,7 @@ pub(crate) mod providers_bindings {
             "openidea:plugin/settings": super::bindings::openidea::plugin::settings,
             "openidea:plugin/database": super::bindings::openidea::plugin::database,
             "openidea:plugin/mcp": super::bindings::openidea::plugin::mcp,
+            "openidea:plugin/extensions": super::bindings::openidea::plugin::extensions,
         },
     });
 }
@@ -138,6 +140,7 @@ pub(crate) mod views_bindings {
             "openidea:plugin/settings": super::bindings::openidea::plugin::settings,
             "openidea:plugin/database": super::bindings::openidea::plugin::database,
             "openidea:plugin/mcp": super::bindings::openidea::plugin::mcp,
+            "openidea:plugin/extensions": super::bindings::openidea::plugin::extensions,
         },
     });
 }
@@ -683,7 +686,7 @@ impl workspace::HostProject for StoreData {
             return Ok(Err(e));
         }
         let root = self.table.get(&this)?.root.clone();
-        let real = match sandbox::resolve_in_root(&root, &path) {
+        let real = match self.resolve_in_project(&root, &path) {
             Ok(real) => real,
             Err(e) => {
                 let e = if e.ends_with("no such file") { wit::Error::NotFound(e) } else { wit::Error::Invalid(e) };
@@ -696,20 +699,41 @@ impl workspace::HostProject for StoreData {
         Ok(sandbox::read_text(&real).map_err(wit::Error::Failed))
     }
 
+    fn read_bytes(&mut self, this: Resource<ProjectRes>, path: String) -> Fallible<Vec<u8>> {
+        if let Err(e) = self.require(Capability::ProjectRead) {
+            return Ok(Err(e));
+        }
+        let root = self.table.get(&this)?.root.clone();
+        let real = match self.resolve_in_project(&root, &path) {
+            Ok(real) => real,
+            Err(e) => {
+                let e = if e.ends_with("no such file") { wit::Error::NotFound(e) } else { wit::Error::Invalid(e) };
+                return Ok(Err(e));
+            }
+        };
+        // The bytes on disk: an unsaved text buffer does not apply, binary files are the point.
+        Ok(sandbox::read_bytes(&real).map_err(wit::Error::Failed))
+    }
+
     fn exists(&mut self, this: Resource<ProjectRes>, path: String) -> Fallible<bool> {
         if let Err(e) = self.require(Capability::ProjectRead) {
             return Ok(Err(e));
         }
         let root = self.table.get(&this)?.root.clone();
-        match sandbox::inside_root(&root, &path) {
+        match self.inside_project(&root, &path) {
             Err(e) => Ok(Err(wit::Error::Invalid(e))),
             Ok(false) => {
                 Ok(Err(wit::Error::Invalid(format!("{path}: access outside the project root is not allowed"))))
             }
             Ok(true) => {
                 let requested = Path::new(&path);
-                let joined = if requested.is_absolute() { requested.to_path_buf() } else { root.join(requested) };
-                Ok(Ok(joined.exists()))
+                let joined =
+                    |root: &Path| if requested.is_absolute() { requested.to_path_buf() } else { root.join(requested) };
+                let mut exists = joined(&root).exists();
+                if !exists && !requested.is_absolute() {
+                    exists = self.host.member_roots(&root).iter().any(|root| joined(root).exists());
+                }
+                Ok(Ok(exists))
             }
         }
     }
@@ -719,7 +743,7 @@ impl workspace::HostProject for StoreData {
             return Ok(Err(e));
         }
         let root = self.table.get(&this)?.root.clone();
-        let real = match sandbox::resolve_in_root(&root, &path) {
+        let real = match self.resolve_in_project(&root, &path) {
             Ok(real) => real,
             Err(e) => {
                 let e = if e.ends_with("no such file") { wit::Error::NotFound(e) } else { wit::Error::Invalid(e) };
@@ -778,7 +802,7 @@ impl workspace::HostProject for StoreData {
             return Ok(Err(too_much_to_write(&path)));
         }
         let root = self.table.get(&this)?.root.clone();
-        let real = match sandbox::resolve_writable_in_root(&root, &path) {
+        let real = match self.resolve_writable_in_project(&root, &path) {
             Ok(real) => real,
             Err(e) => return Ok(Err(wit::Error::Invalid(e))),
         };
@@ -834,6 +858,27 @@ fn core_range(r: wit::Range) -> ide_core::Range {
     ide_core::Range::new(pos(r.start), pos(r.end))
 }
 impl StoreData {
+    /// A `project` resource's path: inside the resource's root, or — for a
+    /// project window group — inside any of its member roots (as the editor and
+    /// LSP resolve them). When no root accepts the path, the resource root's own
+    /// refusal is the error, as if there were no members.
+    fn resolve_in_project(&self, root: &Path, path: &str) -> Result<PathBuf, String> {
+        sandbox::resolve_in_root(root, path).or_else(|root_error| {
+            sandbox::resolve_in_roots(&self.host.member_roots(root), path).map_err(|_| root_error)
+        })
+    }
+    /// [`Self::resolve_in_project`] for a content write's destination.
+    fn resolve_writable_in_project(&self, root: &Path, path: &str) -> Result<PathBuf, String> {
+        sandbox::resolve_writable_in_root(root, path).or_else(|root_error| {
+            sandbox::resolve_writable_in_roots(&self.host.member_roots(root), path).map_err(|_| root_error)
+        })
+    }
+    /// Whether a `project` resource's path lands inside the resource's root or
+    /// any member of its workspace group, without requiring it to exist.
+    fn inside_project(&self, root: &Path, path: &str) -> Result<bool, String> {
+        sandbox::inside_root(root, path)
+            .or_else(|root_error| sandbox::inside_roots(&self.host.member_roots(root), path).map_err(|_| root_error))
+    }
     fn decoration_path(&self, path: &str) -> Result<PathBuf, wit::Error> {
         if Path::new(path).is_absolute() {
             return Ok(PathBuf::from(path));
@@ -1143,6 +1188,11 @@ impl events::Host for StoreData {
                 | EventKind::TerminalExited
                 | EventKind::ContentTabAction
         ) && let Err(e) = self.host.require_api(kind.name(), 4)
+        {
+            return Ok(Err(to_wit(e)));
+        }
+        if kind == EventKind::ExtensionsChanged
+            && let Err(e) = self.host.require_api(kind.name(), 5)
         {
             return Ok(Err(to_wit(e)));
         }
@@ -2354,6 +2404,19 @@ impl bindings::openidea::plugin::database::Host for StoreData {
         self.deadline += waited;
         self.call_started += waited;
         Ok(result.map_err(to_wit))
+    }
+}
+impl bindings::openidea::plugin::extensions::Host for StoreData {
+    fn contributions(&mut self, point: String) -> Fallible<Vec<bindings::openidea::plugin::extensions::Contribution>> {
+        Ok(self
+            .host
+            .extension_contributions(&clip(point, 128))
+            .map(|list| {
+                list.into_iter()
+                    .map(|(plugin, data)| bindings::openidea::plugin::extensions::Contribution { plugin, data })
+                    .collect()
+            })
+            .map_err(to_wit))
     }
 }
 impl bindings::openidea::plugin::mcp::Host for StoreData {

@@ -535,3 +535,116 @@ pub enum AgentEvent {
     /// The installed or configured agent providers changed.
     Providers,
 }
+
+pub use ide_core::settings::{AgentMcpServer, McpTransport};
+
+/// Where an MCP server configuration is stored (`settings.toml` vs `.openidea/settings.toml`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum McpScope {
+    User,
+    Workspace,
+}
+
+/// A named environment variable or HTTP header for an MCP server.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct McpKeyValue {
+    pub name: String,
+    pub value: String,
+}
+
+/// One configured Model Context Protocol (MCP) server.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServer {
+    pub id: String,
+    pub name: String,
+    pub scope: McpScope,
+    pub transport: McpTransport,
+    pub enabled: bool,
+    pub command: Option<String>,
+    pub args: Vec<String>,
+    pub env: Vec<McpKeyValue>,
+    pub url: Option<String>,
+    pub headers: Vec<McpKeyValue>,
+    /// Agent provider ids this server is enabled for; empty means enabled for all agents.
+    #[serde(default)]
+    pub agents: Vec<String>,
+}
+
+/// Payload for creating or updating a user or workspace MCP server.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerInput {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub name: String,
+    pub scope: McpScope,
+    pub transport: McpTransport,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: Vec<McpKeyValue>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub headers: Vec<McpKeyValue>,
+    /// Agent provider ids this server is enabled for; empty means enabled for all agents.
+    #[serde(default)]
+    pub agents: Vec<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Payload for creating a custom ACP agent (always the ACP driver); the id
+/// becomes the `<config>/agents/<id>.toml` file name.
+#[derive(Clone, Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CustomAgentInput {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+}
+
+/// What importing one entry of a JetBrains `acp.json` file did.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpImportOutcome {
+    /// The `agent_servers` key the entry was imported from.
+    pub name: String,
+    /// The id its agent file would get (also when skipped).
+    pub id: String,
+    pub saved: bool,
+    /// Why the entry was skipped; empty when it was saved.
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// What accepting a worktree task's changes copied into the local checkout.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAcceptOutcome {
+    /// Relative paths copied into the checkout (uncommitted), including ones already identical.
+    pub accepted: Vec<String>,
+    /// Files left alone because the checkout has its own edits to them.
+    pub skipped: Vec<AgentAcceptSkipped>,
+}
+
+/// A file accept left alone, with why.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAcceptSkipped {
+    pub path: String,
+    pub reason: String,
+}

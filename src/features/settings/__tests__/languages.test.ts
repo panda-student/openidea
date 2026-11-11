@@ -205,12 +205,15 @@ describe("languages settings", () => {
     expect(validateLanguages({}).java.languageLevel).toBe("");
     expect(validateLanguages({ java: { languageLevel: "8" } }).java.languageLevel).toBe("8");
     expect(validateLanguages({ java: { languageLevel: "21" } }).java.languageLevel).toBe("21");
-    for (const invalid of ["6", "26", 17, null]) {
+    expect(validateLanguages({ java: { languageLevel: "6" } }).java.languageLevel).toBe("6");
+    for (const invalid of ["4", "1.6", "26", 17, null]) {
       expect(validateLanguages({ java: { languageLevel: invalid } }).java.languageLevel).toBe("");
     }
     expect(JAVA_LANGUAGE_LEVELS[0]).toBe("");
     expect(JAVA_LANGUAGE_LEVELS).toContain("8");
     expect(JAVA_LANGUAGE_LEVELS).toContain("25");
+    expect(JAVA_LANGUAGE_LEVELS).toContain("5");
+    expect(JAVA_LANGUAGE_LEVELS).toContain("14");
   });
 
   it("normalizes project structure modules, libraries, facets, and artifacts", () => {
@@ -300,7 +303,7 @@ describe("languages settings", () => {
 describe("language pages", () => {
   it("keeps every language under Languages & Frameworks, as in IntelliJ IDEA", () => {
     const tree = buildPageTree(LANGUAGE_PAGES.map((p) => ({ ...p, component: p.component! })));
-    expect(tree.map((n) => n.title)).toEqual(["Project Structure", "Languages & Frameworks"]);
+    expect(tree.map((n) => n.title)).toEqual(["Languages & Frameworks"]);
     const langs = tree.find((n) => n.title === "Languages & Frameworks")!;
     expect(langs.children.map((n) => n.title)).toEqual([
       "Go",
@@ -315,7 +318,6 @@ describe("language pages", () => {
       "Ruby",
       "Rust",
       "TypeScript",
-      "Plugin Formatters",
     ]);
   });
 
