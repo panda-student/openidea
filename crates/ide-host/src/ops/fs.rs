@@ -21,6 +21,7 @@ pub async fn fs_compare_directories(
     window: &str,
     left: PathBuf,
     right: PathBuf,
+    mode: ide_vfs::DirectoryCompareMode,
     request: RequestId,
     on_progress: Channel<ide_vfs::DirectoryCompareProgress>,
 ) -> IdeResult<Vec<ide_vfs::DirectoryCompareEntry>> {
@@ -29,13 +30,21 @@ pub async fn fs_compare_directories(
     let result = host
         .blocking(move || {
             let last = std::cell::Cell::new(std::time::Instant::now() - std::time::Duration::from_secs(1));
-            ide_vfs::compare_directories(&left, &right, Some(&project.root), &project.exclude_globs(), &cancel, |p| {
-                // Bound IPC traffic even when hashing multi-gigabyte files.
-                if last.get().elapsed() >= std::time::Duration::from_millis(80) || p.total == Some(p.compared) {
-                    let _ = on_progress.send(p);
-                    last.set(std::time::Instant::now());
-                }
-            })
+            ide_vfs::compare_directories(
+                &left,
+                &right,
+                mode,
+                Some(&project.root),
+                &project.exclude_globs(),
+                &cancel,
+                |p| {
+                    // Bound IPC traffic even when hashing multi-gigabyte files.
+                    if last.get().elapsed() >= std::time::Duration::from_millis(80) || p.total == Some(p.compared) {
+                        let _ = on_progress.send(p);
+                        last.set(std::time::Instant::now());
+                    }
+                },
+            )
         })
         .await;
     host.end_request(request);
@@ -85,11 +94,13 @@ pub async fn fs_read_dir(host: &Host, window: &str, path: PathBuf) -> IdeResult<
     host.blocking(move || {
         let excludes = project
             .map(|p| {
-                let globs = p.exclude_globs();
+                // An attached project's folders follow its own exclusions.
+                let root = p.root_of(&path);
+                let globs = p.exclude_globs_in(&root);
                 // `read_dir` matches relative to the enclosing repository: re-anchor
-                // project-root patterns (`/build`) when the project is a repo subfolder.
-                let repo = p.root.ancestors().find(|d| d.join(".git").exists());
-                match repo.and_then(|r| p.root.strip_prefix(r).ok()).filter(|rel| !rel.as_os_str().is_empty()) {
+                // root patterns (`/build`) when the project is a repo subfolder.
+                let repo = root.ancestors().find(|d| d.join(".git").exists());
+                match repo.and_then(|r| root.strip_prefix(r).ok()).filter(|rel| !rel.as_os_str().is_empty()) {
                     Some(rel) => {
                         let rel = rel.to_string_lossy().replace('\\', "/");
                         globs.into_iter().map(|g| if g.starts_with('/') { format!("/{rel}{g}") } else { g }).collect()

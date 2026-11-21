@@ -1571,6 +1571,19 @@
   font-size: var(--agent-fs-ui, var(--fs-ui));
   container: question-card / inline-size;
 }
+/* A question that outlived its turn waits above the composer, at the composer's width. */
+.questionCardPinned {
+  flex: none;
+  max-height: 50vh;
+  overflow-y: auto;
+  width: 100%;
+  max-width: var(--session-content-width);
+  margin: 0 auto 8px;
+}
+.fitWidth .questionCardPinned {
+  width: calc(100% - var(--space-3) * 2);
+  max-width: none;
+}
 .questionTabCheck {
   flex: none;
   color: var(--accent);
