@@ -682,6 +682,16 @@ impl Host {
                 weak.upgrade().map(|p| p.settings.effective().agent_security).unwrap_or_default()
             }));
         }
+        {
+            let weak = Arc::downgrade(&project);
+            let trust = self.trust.clone();
+            project.agents.set_workspace_roots_hook(Arc::new(move || {
+                let Some(p) = weak.upgrade() else { return Vec::new() };
+                let mut roots = vec![p.root.clone()];
+                roots.extend(crate::mcp::trusted_attachments(&trust, &p.root));
+                roots
+            }));
+        }
         self.insert_project(window, project.clone());
         for (key, text, dirty) in &carried {
             let _ = project.documents.restore_untitled_buffer(key, text, *dirty);
@@ -755,12 +765,20 @@ impl Host {
         let skill_settings = settings.clone();
         let skill_root = root.clone();
         let trust = self.trust.clone();
+        let plugin_host = self.plugin_host.read().clone();
         agents.set_skills_policy_hook(Box::new(move || {
             let layer = |scope| skill_settings.layer(scope).agents.skills.clone();
+            let workspace_trusted = trust.window_trusted(&skill_root).unwrap_or(false);
+            let plugin_dirs = plugin_host
+                .upgrade()
+                .map(|plugins| plugins.skill_dirs(Some(&skill_root), workspace_trusted))
+                .unwrap_or_default();
             ide_agent::SkillsPolicy {
                 user: layer(ide_workspace::settings::SettingsScope::Global),
                 workspace: layer(ide_workspace::settings::SettingsScope::Project),
-                workspace_trusted: trust.trusted(&skill_root).unwrap_or(false),
+                workspace_trusted,
+                workspace_roots: crate::ops::agent::workspace_skill_roots(&skill_root),
+                plugin_dirs,
             }
         }));
         agents.set_mcp_servers_hook(Box::new(move || {

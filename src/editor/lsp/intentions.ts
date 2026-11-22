@@ -41,7 +41,7 @@ import { inspectionsAt, type EditorDiagnostic } from "./diagnostics";
 import { SPELLING_INSPECTION } from "@/platform/inspections";
 import { editInspectionSettings, intentionControls } from "@/platform/inspectionControls";
 import { runInteractiveCodeAction } from "./interactiveCommand";
-import { tx } from "@/platform/i18n";
+import { tx, txPart } from "@/platform/i18n";
 
 const codeActionBackoff = featureBackoff();
 
@@ -407,11 +407,12 @@ function actionItems(
   view: EditorView,
   actions: CodeAction[],
   resolved?: Map<CodeAction, Promise<CodeAction>>,
+  actionIcon?: (action: CodeAction) => string,
 ): ListPopupItem[] {
   return listedCodeActions(actions).map((a, i) => ({
     id: `lsp:${i}`,
     label: a.title,
-    icon: isQuickFix(a) ? quickFixIcon(view) : "bulb",
+    icon: actionIcon?.(a) ?? (isQuickFix(a) ? quickFixIcon(view) : "bulb"),
     quickFix: isQuickFix(a),
     emphasis: a.isPreferred,
     disabled: a.disabledReason,
@@ -495,7 +496,7 @@ export function withInspectionControls(view: EditorView, items: ListPopupItem[])
     ...items,
     ...inspections.map((inspection) => ({
       id: `inspection:${inspection.id}`,
-      label: tx`Inspection '${inspection.name}' options`,
+      label: tx`Inspection '${txPart(inspection.name)}' options`,
       icon: "settings",
       run: () => editInspectionSettings(inspection.id),
       submenu: intentionControls(inspection),
@@ -604,6 +605,8 @@ export async function runKindAction(
     whole?: boolean;
     none: string;
     label: string;
+    compact?: boolean;
+    actionIcon?: (action: CodeAction) => string;
     /**
      * Syntax-based fallback when the server offers no enabled action
      * (`empty`) or cannot answer; true when it handled the request.
@@ -638,7 +641,8 @@ export async function runKindAction(
       kind: "list",
       anchor: caretAnchor(view, view.state.selection.main.head),
       title: opts.label,
-      items: actionItems(view, enabled),
+      compact: opts.compact,
+      items: actionItems(view, enabled, undefined, opts.actionIcon),
     });
   } catch (e) {
     reportLspError(view, e, true);

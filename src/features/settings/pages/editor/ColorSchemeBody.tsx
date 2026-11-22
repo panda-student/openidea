@@ -40,7 +40,7 @@ import { executeAction, registerActions } from "@/platform/actions";
 import { call, commands } from "@/platform/ipc";
 import { ask, confirm, showError } from "@/workbench/messages";
 import { parseIcls, SchemeParseError, importScheme, deleteScheme, exportIcls } from "@/platform/icls";
-import { tx, useTx } from "@/platform/i18n";
+import { tx, txPart, useTx } from "@/platform/i18n";
 import { selectPage } from "../../model/staging";
 
 type Overrides = Record<string, Record<string, TextAttributesOverride>>;
@@ -135,6 +135,7 @@ function previewVars(
       k.startsWith("--border-") ||
       k.startsWith("--ansi-") ||
       k.startsWith("--git-") ||
+      k.startsWith("--diff-") ||
       k.startsWith("--wave-") ||
       k.startsWith("--editor-") ||
       k === "--caret"
@@ -1205,7 +1206,15 @@ function AttributeEditor({
         inherited={inherited.background}
         onChange={attr.bg || (attr.token && !attr.italicOnly) ? (c) => set({ background: c }) : undefined}
       />
-      {!attr.italicOnly && (
+      {attr.stripe && (
+        <ColorRow
+          label={tx("Error stripe mark")}
+          value={v.errorStripeColor}
+          inherited={inherited.errorStripeColor}
+          onChange={(c) => set({ errorStripeColor: c })}
+        />
+      )}
+      {!attr.italicOnly && !attr.stripe && (
         <>
           <ColorRow
             label="Effects"
@@ -1277,7 +1286,7 @@ function ColorInput({
       <Input
         mono
         className={styles.swatchInput}
-        aria-label={tx`${label} hex`}
+        aria-label={tx`${txPart(label)} hex`}
         value={draft ?? value}
         invalid={draft !== null && !HEX_COLOR.test(draft)}
         onChange={(e) => {
@@ -1481,6 +1490,89 @@ function GitPreview({
               </span>
             </div>
           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One diff row in the Changed lines preview: a label, a coloured strip and its overview stripe. */
+const DIFF_PREVIEW_ROWS: Array<{ attr: string; code: string; bgVar: string; stripeVar: string }> = [
+  { attr: "diffChanged", code: "def MyClass():", bgVar: "--diff-modified", stripeVar: "--diff-modified-stripe" },
+  { attr: "diffInserted", code: "value = 123", bgVar: "--diff-inserted", stripeVar: "--diff-inserted-stripe" },
+  { attr: "diffDeleted", code: "pass  # old", bgVar: "--diff-deleted", stripeVar: "--diff-deleted-stripe" },
+];
+
+/** The Diff & Merge page shows the real diff surfaces: change-type strips on a side-by-side
+ *  diff and the wavy separator on a folded-unchanged fragment. Each colour selects its attribute. */
+function DiffMergePreview({
+  vars,
+  ids,
+  reveal,
+}: {
+  vars: CSSProperties;
+  ids: Set<string>;
+  reveal: (attrId: string) => void;
+}) {
+  const click = (attrId: string) => revealPreviewAttr(attrId, ids, reveal);
+  const stripeCell = (attrId: string, colorVar: string, key: string) => (
+    <span
+      key={key}
+      className={`${styles.diffStripe} ${styles.clickable}`}
+      style={{ background: `var(${colorVar})` }}
+      title={tx("Error stripe mark")}
+      onClick={() => click(attrId)}
+    />
+  );
+  return (
+    <div className={styles.diffPreview} style={vars} aria-label={tx("Color scheme preview")}>
+      <div className={styles.gitSection}>
+        <div className={styles.gitSectionTitle}>{tx("Changed lines")}</div>
+        <div className={styles.diffPane}>
+          {DIFF_PREVIEW_ROWS.map((row, i) => (
+            <div key={row.attr} className={styles.diffLine}>
+              <span className={styles.previewGutter}>{i + 1}</span>
+              <span
+                className={`${styles.diffLineBody} ${styles.clickable}`}
+                style={{ background: `color-mix(in srgb, var(${row.bgVar}) 70%, transparent)` }}
+                onClick={() => click(row.attr)}
+              >
+                {row.code}
+              </span>
+              {stripeCell(row.attr, row.stripeVar, "stripe")}
+            </div>
+          ))}
+          <div className={styles.diffLine} onClick={() => click("diffConflict")}>
+            <span className={styles.previewGutter}>4</span>
+            <span
+              className={`${styles.diffLineBody} ${styles.clickable}`}
+              style={{ background: `color-mix(in srgb, var(--bg-editor) 100%, transparent)` }}
+            >
+              <span
+                className={styles.diffConflictMark}
+                style={{ background: `var(--diff-conflict-stripe)` }}
+                onClick={() => click("diffConflict")}
+              >
+                &lt;&lt;&lt;&lt;&nbsp; HEAD
+              </span>
+            </span>
+            {stripeCell("diffConflict", "--diff-conflict-stripe", "conflict-stripe")}
+          </div>
+        </div>
+      </div>
+      <div className={styles.gitSection}>
+        <div className={styles.gitSectionTitle}>{tx("Folded unchanged fragments")}</div>
+        <div className={styles.diffFold}>
+          <div className={styles.diffFoldCode}>def foo(self):</div>
+          <div
+            className={`${styles.diffFoldWave} ${styles.clickable}`}
+            style={{ background: `var(--diff-separator-wave)`, borderBottomColor: `var(--diff-separator-wave)` }}
+            title={tx("Folded unchanged fragments › Wave")}
+            onClick={() => click("diffSeparatorWave")}
+          >
+            <span className={styles.diffFoldChevron}>{tx("6 unchanged lines")}</span>
+          </div>
+          <div className={styles.diffFoldCode}>def bar(self, a, b):</div>
         </div>
       </div>
     </div>
@@ -1739,7 +1831,7 @@ export function ColorSchemePage({
         </div>
       )}
       {scheme === "theme-default" && (
-        <div className={styles.note}>{tx`Follows the IDE theme: currently ${schemeName}.`}</div>
+        <div className={styles.note}>{tx`Follows the IDE theme: currently ${txPart(schemeName)}.`}</div>
       )}
       {redGreen && (id === "dark" || id === "light") && (
         <div className={styles.note}>
@@ -1803,6 +1895,8 @@ export function ColorSchemePage({
           <SplitPanel defaultSize="38%" minSize="88px">
             {scopes[0] === "Git" ? (
               <GitPreview vars={vars} ids={ids} reveal={reveal} />
+            ) : scopes[0] === "Diff & Merge" ? (
+              <DiffMergePreview vars={vars} ids={ids} reveal={reveal} />
             ) : (
               <pre className={styles.schemePreview} style={vars} aria-label={tx("Color scheme preview")}>
                 {sample.code.map((line, i) => (

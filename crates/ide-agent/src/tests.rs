@@ -986,7 +986,7 @@ async fn commands_are_remembered_per_project_and_merged_with_skills_on_disk() {
     wait_for(&mgr_a, &task.id, AgentStatus::NeedsInput).await;
     assert_eq!(names(mgr_a.commands("claude", None).await.unwrap()), ["review", "triage"]);
     assert_eq!(names(mgr_a.commands("claude", Some(&task.id)).await.unwrap()), ["review", "triage"]);
-    // Other agents get only what they offered, plus verified native builtins.
+    // Other agents also receive the project's active skills from the skills hub, plus verified native builtins.
     assert_eq!(
         names(mgr_a.commands("codex", None).await.unwrap()),
         [
@@ -1001,6 +1001,7 @@ async fn commands_are_remembered_per_project_and_merged_with_skills_on_disk() {
             "goal",
             "rename",
             "logout",
+            "triage",
         ]
     );
     mgr_a.cancel(&task.id, None).unwrap();
@@ -4444,6 +4445,82 @@ async fn per_session_mcp_overrides_filter_session_and_reload_when_idle() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn per_session_skill_overrides_filter_commands_persist_and_reload_when_idle() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join(".agents/skills/tdd")).unwrap();
+    std::fs::write(root.join(".agents/skills/tdd/SKILL.md"), "---\nname: tdd\ndescription: TDD\n---\n").unwrap();
+    std::fs::create_dir_all(root.join(".claude/skills/noisy")).unwrap();
+    std::fs::write(root.join(".claude/skills/noisy/SKILL.md"), "---\nname: noisy\ndescription: Noisy\n---\n").unwrap();
+
+    let agent = Arc::new(FakeAgent::default());
+    let mgr = manager(root, agent.clone());
+    mgr.set_skills_policy_hook(Box::new({
+        let root = root.to_path_buf();
+        move || SkillsPolicy {
+            user: BTreeMap::from([("tdd".into(), AgentSkillPolicy { mode: AgentSkillMode::Off })]),
+            workspace_roots: vec![root.clone()],
+            ..SkillsPolicy::default()
+        }
+    }));
+
+    // Start task with `tdd` (default off) enabled for this session and `noisy` turned off.
+    let task = mgr
+        .create(NewAgentTask {
+            project_root: None,
+            prompt: text("again"),
+            provider: "claude".into(),
+            config: Vec::new(),
+            isolation: Isolation::Local,
+            base: None,
+            mcp_overrides: BTreeMap::new(),
+            idle: false,
+            skill_overrides: BTreeMap::from([
+                ("tdd".into(), AgentSkillMode::Auto),
+                ("noisy".into(), AgentSkillMode::Off),
+            ]),
+        })
+        .await
+        .unwrap();
+    wait_for(&mgr, &task.id, AgentStatus::Ready).await;
+
+    let cmd_names: Vec<String> =
+        mgr.commands("claude", Some(&task.id)).await.unwrap().into_iter().map(|c| c.name).collect();
+    assert!(cmd_names.contains(&"tdd".to_string()), "{cmd_names:?}");
+    assert!(
+        !cmd_names.contains(&"noisy".to_string()),
+        "`noisy` offered on disk must be stripped when off: {cmd_names:?}"
+    );
+
+    // Flip overrides while idle -> recycles resumable session so next turn calls `session/load`.
+    let updated = mgr
+        .set_skill_overrides(
+            &task.id,
+            BTreeMap::from([("tdd".into(), AgentSkillMode::Off), ("noisy".into(), AgentSkillMode::Auto)]),
+        )
+        .unwrap();
+    assert_eq!(updated.skill_overrides.get("tdd"), Some(&AgentSkillMode::Off));
+    assert_eq!(updated.skill_overrides.get("noisy"), Some(&AgentSkillMode::Auto));
+
+    let cmd_names_after: Vec<String> =
+        mgr.commands("claude", Some(&task.id)).await.unwrap().into_iter().map(|c| c.name).collect();
+    assert!(!cmd_names_after.contains(&"tdd".to_string()), "{cmd_names_after:?}");
+    assert!(cmd_names_after.contains(&"noisy".to_string()), "{cmd_names_after:?}");
+
+    mgr.prompt(&task.id, text("again"), false).await.unwrap();
+    wait_for(&mgr, &task.id, AgentStatus::Ready).await;
+    assert_eq!(agent.mcp_calls.lock().last().map(|c| c.0.as_str()), Some("session/load"));
+    mgr.shutdown();
+
+    // Persisted task file preserves `skill_overrides` across restart.
+    let restored_mgr = manager(root, Arc::new(FakeAgent::default()));
+    let restored = restored_mgr.subscribe(Arc::new(|_| {})).into_iter().find(|t| t.id == task.id).unwrap();
+    assert_eq!(restored.skill_overrides.get("tdd"), Some(&AgentSkillMode::Off));
+    assert_eq!(restored.skill_overrides.get("noisy"), Some(&AgentSkillMode::Auto));
+    restored_mgr.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn copilot_falls_back_to_acp_when_headless_probe_session_or_prompt_fails() {
     #[derive(Clone, Copy)]
     enum BreakAt {
@@ -4649,10 +4726,43 @@ done
 #[test]
 fn session_params_name_the_servers_off() {
     let mcp = McpForSession { servers: vec![json!({ "name": "docs" })], off: vec!["github".into()] };
-    let params = session_params("/p", &mcp, None);
+    let params = session_params("/p", &mcp, None, &[]);
     assert_eq!(params["cwd"], "/p");
     assert_eq!(params["mcpServers"][0]["name"], "docs");
     assert_eq!(params["_meta"]["openidea"]["mcpServersOff"], json!(["github"]));
     let none = McpForSession { servers: Vec::new(), off: Vec::new() };
-    assert!(session_params("/p", &none, None).get("_meta").is_none());
+    assert!(session_params("/p", &none, None, &[]).get("_meta").is_none());
+}
+
+#[test]
+fn session_params_offer_the_workspace_roots() {
+    let none = McpForSession { servers: Vec::new(), off: Vec::new() };
+    let params = session_params("/w/api", &none, None, &["/w/web".to_owned()]);
+    assert_eq!(params["additionalDirectories"], json!(["/w/web"]));
+    assert!(session_params("/w/api", &none, None, &[]).get("additionalDirectories").is_none());
+}
+
+#[tokio::test]
+async fn workspace_roots_go_to_agents_that_take_them() {
+    let tmp = tempfile::tempdir().unwrap();
+    let [api, web, worktree] = ["api", "web", "worktree"].map(|d| tmp.path().join(d));
+    for d in [&api, &web, &worktree] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    let mgr = manager(tmp.path(), Arc::new(FakeAgent::default()));
+    let hook_roots = [api.clone(), web.clone(), web.clone()];
+    mgr.set_workspace_roots_hook(Arc::new(move || hook_roots.to_vec()));
+    let init = |capabilities: Value| acp::Negotiated {
+        generation: 1,
+        capabilities,
+        agent_info: None,
+        auth_methods: Vec::new(),
+        meta: None,
+    };
+    let takes = init(json!({ "sessionCapabilities": { "additionalDirectories": {} } }));
+    let web = dunce::canonicalize(&web).unwrap().to_string_lossy().into_owned();
+    assert_eq!(mgr.shared.additional_directories(&takes, &api, None), vec![web.clone()]);
+    // A task in a worktree of `api` isn't offered the project's own checkout.
+    assert_eq!(mgr.shared.additional_directories(&takes, &worktree, Some(&api)), vec![web]);
+    assert!(mgr.shared.additional_directories(&init(json!({})), &api, None).is_empty());
 }
